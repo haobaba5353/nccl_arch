@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NCCL 全部算子图谱</title>
+  <link rel="stylesheet" href="plugins/handdrawn-blueprint/handdrawn-blueprint.css?v=20260804-11">
+</head>
+<body class="flow-page">
+  <main>
+    <h1 id="page-title">NCCL 全部算子图谱</h1>
+    <section class="flow-hero" aria-labelledby="page-title">
+      <p>覆盖边界：9 个公开通信 API。下方数据平面以 4 个 rank、4 个向量位置的代表性轨迹显示当前所选算子的缓冲区更新。</p>
+      <div class="flow-key" aria-label="图例">
+        <span class="flow-chip compute">设备归约 / 内核</span>
+        <span class="flow-chip state">队列 / 同步状态</span>
+        <span class="flow-chip result">可观察结果</span>
+      </div>
+    </section>
+
+    <section aria-labelledby="operator-title">
+      <h2 id="operator-title">算子图谱与数据平面</h2>
+      <div class="flow-controls" aria-label="算子与拓扑选择器">
+        <label class="flow-control">算子
+          <select id="operator-select" aria-label="选择 NCCL 算子"></select>
+        </label>
+        <label class="flow-control">代表性拓扑
+          <select id="topology-select" aria-label="选择拓扑"></select>
+        </label>
+        <label class="flow-control">执行阶段
+          <select id="phase-select" aria-label="选择执行阶段"></select>
+        </label>
+      </div>
+
+      <div class="flow-detail">
+        <div class="flow-registry flow-summary-registry">
+          <table aria-label="当前算子说明">
+            <thead><tr><th>字段</th><th>当前值</th></tr></thead>
+            <tbody id="operator-summary"></tbody>
+          </table>
+        </div>
+        <aside class="flow-note" id="operator-note"></aside>
+      </div>
+
+      <div class="flow-transfer" aria-labelledby="transfer-title">
+        <div class="flow-transfer-heading">
+          <div>
+            <h3 id="transfer-title">代表性 rank / buffer 轨迹</h3>
+            <p class="flow-transfer-caption" id="transfer-caption"></p>
+          </div>
+          <div class="flow-transfer-actions" aria-label="阶段控制">
+            <button class="flow-btn" id="phase-step" type="button" aria-label="推进到下一步">下一步</button>
+            <button class="flow-btn" id="phase-reset" type="button" aria-label="重置到第一步">重置</button>
+          </div>
+        </div>
+        <div class="flow-transfer-key">
+          <span class="flow-chip data">source = 未读载荷</span>
+          <span class="flow-chip compute">partial = 已归约</span>
+          <span class="flow-chip result">result = 可见结果</span>
+        </div>
+        <div class="flow-transfer-map" id="transfer-map">
+          <svg id="transfer-edges" aria-hidden="true"></svg>
+          <div class="flow-transfer-lanes" id="transfer-lanes"></div>
+        </div>
+      </div>
+      <p class="flow-status" id="validation-status" role="status"></p>
+      <p class="flow-note">简化说明：该轨迹固定展示 4 个 rank 与 4 个向量位置。实际运行会按消息大小和可用互连划分更多切片；此处只保留一个可检查的代表性通道。所有带 <code>root</code> 的代表性轨迹均取 <code>root = rank 0</code>，实际 root 由 API 参数指定。Ring 保留从 rank 3 回到 rank 0 的闭环；Tree 按明确父子关系向上归约、向下分发。</p>
+    </section>
+
+    <section aria-labelledby="catalog-title">
+      <h2 id="catalog-title">全部算子目录</h2>
+      <p class="small">可点击任一条目切换上方数据平面。所有条目均为应用可直接调用的通信操作。</p>
+      <div class="flow-catalog" id="operator-catalog"></div>
+    </section>
+
+    <section aria-labelledby="registry-title">
+      <h2 id="registry-title">术语与实现边界</h2>
+      <div class="flow-reference-table">
+        <table>
+          <thead><tr><th>术语</th><th>含义与来源</th><th>下游 / 可变性</th></tr></thead>
+          <tbody>
+            <tr><td><code>rank</code></td><td>通信器内的进程 / GPU 编号，范围 <code>[0, R)</code>。</td><td>静态 communicator 成员；决定 peer 与拓扑位置。</td></tr>
+            <tr><td><code>count</code>, <code>datatype</code></td><td>API 给出的元素数量与元素类型；载荷字节数为 <code>count * sizeof(datatype)</code>。</td><td>入队与调优的输入；决定切片与协议候选。</td></tr>
+            <tr><td><code>op</code></td><td>Reduce / AllReduce / ReduceScatter 的归约操作，例如 Sum、Max、Prod。</td><td>设备归约原语消费它；AllGather / Broadcast 不归约。</td></tr>
+            <tr><td>Algo / Proto / Channels</td><td>图与调优模块选择的算法、协议和并行通道数。</td><td>可变运行时决策；实测带宽 / 延迟通过调优回写影响后续选择。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="plugins/handdrawn-blueprint/flow-diagram-interactions.js?v=20260804-11"></script>
+  <script>
+  (() => {
+    "use strict";
+    const RANKS = [0, 1, 2, 3];
+    const CHUNKS = ["c0", "c1", "c2", "c3"];
+    const cellKey = FlowDiagramInteractions.transferCellKey;
+    const ALLREDUCE_INPUT = [[1, 2, 3, 4], [10, 20, 30, 40], [100, 200, 300, 400], [1000, 2000, 3000, 4000]];
+    const ALLREDUCE_SUM = [1111, 2222, 3333, 4444];
+
+    function vectorStates(matrix, state, complete) {
+      const completed = new Set(complete || []);
+      return Object.fromEntries(RANKS.flatMap((rank, row) => CHUNKS.map((chunk, column) => {
+        const key = cellKey(rank, chunk);
+        const currentState = typeof state === "function" ? state(rank, chunk) : state;
+        return [key, { state: completed.has(key) ? "result" : currentState, value: matrix[row][column] }];
+      })));
+    }
+
+    function transfer(key, fromRank, fromBuffer, toRank, toBuffer, chunk, action, kind, fromSide, toSide, lane, label, fromPort = 0, toPort = 0) {
+      return { key, fromRank, fromBuffer, toRank, toBuffer, chunk, action, kind, marker: kind, fromSide, toSide, fromPort, toPort, lane, label, labelAnchor: .5, sourceClearance: 8, targetClearance: 12 };
+    }
+
+    function allReducePhase(key, name, direction, matrix, records, state, complete, metric, explanation, updatedKeys) {
+      return {
+        name,
+        direction,
+        cellStates: vectorStates(matrix, state, complete),
+        transfers: records.map((record, index) => transfer(`${key}-${index}`, ...record)),
+        metric,
+        explanation,
+        updatedKeys
+      };
+    }
+
+    function ringAllReducePhase(...args) {
+      const phase = allReducePhase(...args);
+      phase.transfers.forEach(item => {
+        if (item.fromRank !== RANKS.length - 1 || item.toRank !== RANKS[0]) return;
+        // The return hop owns the exterior ring lane, avoiding every inner arrow and label zone.
+        Object.assign(item, { lane: 92, endLane: 92, push: 70, labelAnchor: .42, labelOffset: -12, sourceClearance: 12, targetClearance: 14 });
+      });
+      return phase;
+    }
+
+    // ReduceScatter is the reduction half of the ring algorithm.  Keep every
+    // concurrent chunk transfer in each snapshot so no chunk silently vanishes
+    // from the trace when this operator is selected independently of AllReduce.
+    function reduceScatterRingPhases(prefix, includeInitial = true) {
+      const phases = [
+        {
+          name: "0. initial buffers",
+          direction: "initial",
+          initial: true,
+          cellStates: vectorStates(ALLREDUCE_INPUT, "source"),
+          transfers: [],
+          metric: "Initial buffers retain one source vector per rank.",
+          explanation: "Each rank starts with four source chunks. The following three rounds reduce and forward all four chunks concurrently."
+        },
+        ringAllReducePhase(`${prefix}-1`, "1. reduce-scatter: first sum", "reduce-scatter", [[1, 2, 3003, 4], [10, 20, 30, 44], [110, 200, 300, 400], [1000, 2200, 3000, 4000]], [
+          [0, "c3", 1, "c3", "c3", "sum + forward", "reduce", "bottom", "top", -16, "4 + 40 = 44"],
+          [1, "c0", 2, "c0", "c0", "sum + forward", "reduce", "bottom", "top", 12, "10 + 100 = 110"],
+          [2, "c1", 3, "c1", "c1", "sum + forward", "reduce", "bottom", "top", -20, "200 + 2000 = 2200"],
+          [3, "c2", 0, "c2", "c2", "sum + forward", "reduce", "right", "right", 176, "3000 + 3 = 3003"]
+        ], "partial", [], "All four chunks complete their first reduction.", "Every rank receives one different chunk, reduces it with its local value, then forwards the partial sum."),
+        ringAllReducePhase(`${prefix}-2`, "2. reduce-scatter: second sum", "reduce-scatter", [[1, 2202, 3003, 4], [10, 20, 3033, 44], [110, 200, 300, 444], [1110, 2200, 3000, 4000]], [
+          [0, "c2", 1, "c2", "c2", "sum + forward", "reduce", "bottom", "top", -16, "3003 + 30 = 3033"],
+          [1, "c3", 2, "c3", "c3", "sum + forward", "reduce", "bottom", "top", 12, "44 + 400 = 444"],
+          [2, "c0", 3, "c0", "c0", "sum + forward", "reduce", "bottom", "top", -20, "110 + 1000 = 1110"],
+          [3, "c1", 0, "c1", "c1", "sum + forward", "reduce", "right", "right", 176, "2200 + 2 = 2202"]
+        ], "partial", [], "Each moving chunk now contains three ranks of input.", "The payload is a partial sum, not the original vector. Four independent chunks remain in flight."),
+        ringAllReducePhase(`${prefix}-3`, "3. reduce-scatter: one final slice per rank", "reduce-scatter", [[1111, 2202, 3003, 4], [10, 2222, 3033, 44], [110, 200, 3333, 444], [1110, 2200, 3000, 4444]], [
+          [0, "c1", 1, "c1", "c1", "sum + forward", "reduce", "bottom", "top", -16, "2202 + 20 = 2222"],
+          [1, "c2", 2, "c2", "c2", "sum + forward", "reduce", "bottom", "top", 12, "3033 + 300 = 3333"],
+          [2, "c3", 3, "c3", "c3", "sum + forward", "reduce", "bottom", "top", -20, "444 + 4000 = 4444"],
+          [3, "c0", 0, "c0", "c0", "sum + forward", "reduce", "right", "right", 176, "1110 + 1 = 1111"]
+        ], "partial", [cellKey(0, "c0"), cellKey(1, "c1"), cellKey(2, "c2"), cellKey(3, "c3")], "ReduceScatter completes with one reduced slice at each rank.", "In this representative layout, rank 0 retains c0, rank 1 retains c1, rank 2 retains c2, and rank 3 retains c3. The other cells remain intermediate storage and are not gathered back.")
+      ];
+      return includeInitial ? phases : phases.slice(1);
+    }
+
+    function cloneMatrix(matrix) {
+      return matrix.map(row => row.slice());
+    }
+
+    function emptyMatrix(value = "-") {
+      return RANKS.map(() => CHUNKS.map(() => value));
+    }
+
+    function allCellKeys() {
+      return RANKS.flatMap(rank => CHUNKS.map(chunk => cellKey(rank, chunk)));
+    }
+
+    function stagedCopyPhases(prefix, initialMatrix, stages, options = {}) {
+      const current = cloneMatrix(initialMatrix);
+      const source = cloneMatrix(initialMatrix);
+      const completed = new Set();
+      const resultState = options.resultState || "result";
+      const initialState = options.initialState || "source";
+      const phaseDirection = options.direction || "exchange";
+      const readFromInitial = options.readFromInitial === true;
+      const phaseList = [{
+        name: options.initialName || "0. initial buffers",
+        direction: "initial",
+        initial: true,
+        cellStates: vectorStates(current, initialState),
+        transfers: [],
+        metric: options.initialMetric || "Inputs are visible before the first transfer.",
+        explanation: options.initialExplanation || "The following snapshots show every declared payload write."
+      }];
+
+      stages.forEach((stage, index) => {
+        const records = stage.records || [];
+        const updatedKeys = records.map(record => cellKey(record[2], record[3]));
+        records.forEach(record => {
+          const fromRank = record[0];
+          const fromColumn = CHUNKS.indexOf(record[1]);
+          const toRank = record[2];
+          const toColumn = CHUNKS.indexOf(record[3]);
+          current[toRank][toColumn] = (readFromInitial ? source : current)[fromRank][fromColumn];
+          completed.add(cellKey(toRank, record[3]));
+        });
+        if (index === stages.length - 1) (options.finalKeys || []).forEach(key => completed.add(key));
+        const cellStateFor = stage.stateFor
+          ? (rank, chunk) => stage.stateFor(rank, chunk, completed)
+          : (rank, chunk) => completed.has(cellKey(rank, chunk)) ? resultState : initialState;
+        phaseList.push({
+          name: stage.name || `${index + 1}. transfer`,
+          direction: stage.direction || phaseDirection,
+          cellStates: vectorStates(current, cellStateFor),
+          transfers: records.map((record, recordIndex) => transfer(`${prefix}-${index + 1}-${recordIndex + 1}`, ...record)),
+          updatedKeys,
+          metric: stage.metric || `${updatedKeys.length} destination cells are written in this step.`,
+          explanation: stage.explanation || "The dashed arrows are the payloads written by this step."
+        });
+      });
+      return phaseList;
+    }
+
+    function allGatherRingPhases(prefix, initialName = "0. source slices", sourceValues = [1, 20, 300, 4000]) {
+      return stagedCopyPhases(prefix, [[sourceValues[0], "-", "-", "-"], ["-", sourceValues[1], "-", "-"], ["-", "-", sourceValues[2], "-"], ["-", "-", "-", sourceValues[3]]], [
+        { name: "1. all-gather: first hop", direction: "all-gather", records: [
+          [0, "c0", 1, "c0", "c0", "forward", "broadcast", "bottom", "top", -16, `copy ${sourceValues[0]}`],
+          [1, "c1", 2, "c1", "c1", "forward", "broadcast", "bottom", "top", 12, `copy ${sourceValues[1]}`],
+          [2, "c2", 3, "c2", "c2", "forward", "broadcast", "bottom", "top", -20, `copy ${sourceValues[2]}`],
+          [3, "c3", 0, "c3", "c3", "forward", "broadcast", "right", "right", 176, `copy ${sourceValues[3]}`]
+        ] },
+        { name: "2. all-gather: second hop", direction: "all-gather", records: [
+          [0, "c3", 1, "c3", "c3", "forward", "broadcast", "bottom", "top", -16, `copy ${sourceValues[3]}`],
+          [1, "c0", 2, "c0", "c0", "forward", "broadcast", "bottom", "top", 12, `copy ${sourceValues[0]}`],
+          [2, "c1", 3, "c1", "c1", "forward", "broadcast", "bottom", "top", -20, `copy ${sourceValues[1]}`],
+          [3, "c2", 0, "c2", "c2", "forward", "broadcast", "right", "right", 176, `copy ${sourceValues[2]}`]
+        ] },
+        { name: "3. all-gather: complete", direction: "all-gather", records: [
+          [0, "c2", 1, "c2", "c2", "forward", "broadcast", "bottom", "top", -16, `copy ${sourceValues[2]}`],
+          [1, "c3", 2, "c3", "c3", "forward", "broadcast", "bottom", "top", 12, `copy ${sourceValues[3]}`],
+          [2, "c0", 3, "c0", "c0", "forward", "broadcast", "bottom", "top", -20, `copy ${sourceValues[0]}`],
+          [3, "c1", 0, "c1", "c1", "forward", "broadcast", "right", "right", 176, `copy ${sourceValues[1]}`]
+        ], metric: `Every rank now holds [${sourceValues.join(", ")}].` }
+      ], { initialName, direction: "all-gather", finalKeys: allCellKeys() });
+    }
+
+    function broadcastPhases() {
+      const initial = [ALLREDUCE_INPUT[0], ...emptyMatrix()];
+      return stagedCopyPhases("broadcast", initial, RANKS.slice(1).map(rank => ({
+        name: `${rank}. broadcast to rank ${rank}`,
+        direction: "broadcast",
+        records: CHUNKS.map((chunk, index) => [0, chunk, rank, chunk, chunk, "copy", "broadcast", "bottom", "top", index * 12 - 18, `copy ${chunk}`])
+      })), { direction: "broadcast", finalKeys: allCellKeys() });
+    }
+
+    function gatherPhases() {
+      const initial = [[1, "-", "-", "-"], ["-", 20, "-", "-"], ["-", "-", 300, "-"], ["-", "-", "-", 4000]];
+      return stagedCopyPhases("gather", initial, RANKS.slice(1).map(rank => ({
+        name: `${rank}. gather rank ${rank} slice`,
+        direction: "gather",
+        records: [[rank, CHUNKS[rank], 0, CHUNKS[rank], CHUNKS[rank], "gather", "data", "top", "bottom", rank * 18 - 36, `gather ${CHUNKS[rank]}`]]
+      })), { direction: "gather", finalKeys: CHUNKS.map(chunk => cellKey(0, chunk)) });
+    }
+
+    function scatterPhases() {
+      const initial = [ALLREDUCE_INPUT[0], ...emptyMatrix()];
+      return stagedCopyPhases("scatter", initial, RANKS.slice(1).map(rank => ({
+        name: `${rank}. scatter ${CHUNKS[rank]}`,
+        direction: "scatter",
+        records: [[0, CHUNKS[rank], rank, "c0", CHUNKS[rank], "copy", "data", "bottom", "top", rank * 18 - 36, `copy ${CHUNKS[rank]}`]]
+      })), { direction: "scatter", finalKeys: RANKS.map(rank => cellKey(rank, "c0")) });
+    }
+
+    function pointToPointPhases(prefix, name) {
+      const initial = [ALLREDUCE_INPUT[0], ...emptyMatrix()];
+      return stagedCopyPhases(prefix, initial, [{
+        name,
+        direction: "exchange",
+        records: CHUNKS.map((chunk, index) => [0, chunk, 1, chunk, chunk, "copy", "data", "bottom", "top", index * 12 - 18, `${chunk} copy`])
+      }], { direction: "exchange", resultState: "result" });
+    }
+
+    function reducePhases() {
+      const rootKeys = CHUNKS.map(chunk => cellKey(0, chunk));
+      return [
+        { name: "0. source vectors", direction: "initial", initial: true, cellStates: vectorStates(ALLREDUCE_INPUT, "source"), transfers: [], metric: "Every rank contributes one vector.", explanation: "The root receives and reduces one source vector per subsequent step." },
+        allReducePhase("reduce-1", "1. reduce rank 1", "reduce", [[11, 22, 33, 44], [10, 20, 30, 40], [100, 200, 300, 400], [1000, 2000, 3000, 4000]], CHUNKS.map((chunk, index) => [1, chunk, 0, chunk, chunk, "reduce", "reduce", "top", "bottom", index * 12 - 18, `${ALLREDUCE_INPUT[0][index]} + ${ALLREDUCE_INPUT[1][index]}`]), rank => rank === 0 ? "partial" : "source", [], "Root now contains a two-rank partial sum.", "Each arrow carries one corresponding vector position."),
+        allReducePhase("reduce-2", "2. reduce rank 2", "reduce", [[111, 222, 333, 444], [10, 20, 30, 40], [100, 200, 300, 400], [1000, 2000, 3000, 4000]], CHUNKS.map((chunk, index) => [2, chunk, 0, chunk, chunk, "reduce", "reduce", "top", "bottom", index * 12 - 18, `${[11, 22, 33, 44][index]} + ${ALLREDUCE_INPUT[2][index]}`]), rank => rank === 0 ? "partial" : "source", [], "Root now contains a three-rank partial sum.", "The root keeps the partial vector while other ranks retain their source buffers."),
+        allReducePhase("reduce-3", "3. reduce rank 3: complete", "reduce", [ALLREDUCE_SUM, [10, 20, 30, 40], [100, 200, 300, 400], [1000, 2000, 3000, 4000]], CHUNKS.map((chunk, index) => [3, chunk, 0, chunk, chunk, "reduce", "reduce", "top", "bottom", index * 12 - 18, `${[111, 222, 333, 444][index]} + ${ALLREDUCE_INPUT[3][index]}`]), rank => rank === 0 ? "result" : "source", rootKeys, "Root owns [1111, 2222, 3333, 4444].", "Reduce completes at the root only; no result is distributed to peers.")
+      ];
+    }
+
+    const allReduceRingPhases = [
+      {
+        name: "0. initial buffers",
+        direction: "initial",
+        initial: true,
+        cellStates: vectorStates(ALLREDUCE_INPUT, "source"),
+        transfers: [],
+        metric: "初始 send buffer：每个 rank 保留自己的未归约向量",
+        explanation: "先观察原始输入；下一步才开始把同名位置的值沿 ring 传递并求和。"
+      },
+      ringAllReducePhase("ar-rs-1", "1. reduce-scatter: first sum", "reduce-scatter", [[1, 2, 3, 4004], [11, 20, 30, 40], [100, 220, 300, 400], [1000, 2000, 3300, 4000]], [
+        [0, "c0", 1, "c0", "c0", "sum + forward", "reduce", "bottom", "top", -16, "1 + 10 = 11"],
+        [1, "c1", 2, "c1", "c1", "sum + forward", "reduce", "bottom", "top", 12, "20 + 200 = 220"],
+        [2, "c2", 3, "c2", "c2", "sum + forward", "reduce", "bottom", "top", -20, "300 + 3000 = 3300"],
+        [3, "c3", 0, "c3", "c3", "sum + forward", "reduce", "right", "right", 176, "4000 + 4 = 4004"]
+      ], "partial", [], "4 个切片各完成第 1 次相加", "每条箭头携带一个实际分片；接收端将收到的数与自己的同名位置相加。"),
+      ringAllReducePhase("ar-rs-2", "2. reduce-scatter: second sum", "reduce-scatter", [[1, 2, 3303, 4004], [11, 20, 30, 4044], [111, 220, 300, 400], [1000, 2220, 3300, 4000]], [
+        [0, "c3", 1, "c3", "c3", "sum + forward", "reduce", "bottom", "top", -16, "4004 + 40 = 4044"],
+        [1, "c0", 2, "c0", "c0", "sum + forward", "reduce", "bottom", "top", 12, "11 + 100 = 111"],
+        [2, "c1", 3, "c1", "c1", "sum + forward", "reduce", "bottom", "top", -20, "220 + 2000 = 2220"],
+        [3, "c2", 0, "c2", "c2", "sum + forward", "reduce", "right", "right", 176, "3300 + 3 = 3303"]
+      ], "partial", [], "每个在环内前进的分片已累加 3 个 rank", "转发的是部分和，不是原始向量；橙色单元显示接收后保存的真实数值。"),
+      ringAllReducePhase("ar-rs-3", "3. reduce-scatter: complete one slice per rank", "reduce-scatter", [[1, 2222, 3303, 4004], [11, 20, 3333, 4044], [111, 220, 300, 4444], [1111, 2220, 3300, 4000]], [
+        [0, "c2", 1, "c2", "c2", "sum + forward", "reduce", "bottom", "top", -16, "3303 + 30 = 3333"],
+        [1, "c3", 2, "c3", "c3", "sum + forward", "reduce", "bottom", "top", 12, "4044 + 400 = 4444"],
+        [2, "c0", 3, "c0", "c0", "sum + forward", "reduce", "bottom", "top", -20, "111 + 1000 = 1111"],
+        [3, "c1", 0, "c1", "c1", "sum + forward", "reduce", "right", "right", 176, "2220 + 2 = 2222"]
+      ], "partial", [cellKey(0, "c1"), cellKey(1, "c2"), cellKey(2, "c3"), cellKey(3, "c0")], "reduce-scatter 完成：每个 rank 持有 1 个最终分片", "绿色单元已是完整求和；下一阶段只复制这些完整分片，不再执行加法。"),
+      ringAllReducePhase("ar-ag-1", "4. all-gather: first copy", "all-gather", [[1111, 2222, 3303, 4004], [11, 2222, 3333, 4044], [111, 220, 3333, 4444], [1111, 2220, 3300, 4444]], [
+        [0, "c1", 1, "c1", "c1", "copy", "broadcast", "bottom", "top", -16, "copy 2222"],
+        [1, "c2", 2, "c2", "c2", "copy", "broadcast", "bottom", "top", 12, "copy 3333"],
+        [2, "c3", 3, "c3", "c3", "copy", "broadcast", "bottom", "top", -20, "copy 4444"],
+        [3, "c0", 0, "c0", "c0", "copy", "broadcast", "right", "right", 176, "copy 1111"]
+      ], "partial", [cellKey(0, "c0"), cellKey(0, "c1"), cellKey(1, "c1"), cellKey(1, "c2"), cellKey(2, "c2"), cellKey(2, "c3"), cellKey(3, "c0"), cellKey(3, "c3")], "每个 rank 已取得 2/4 个最终分片", "all-gather 只转发完成的分片，因此数值保持不变。"),
+      ringAllReducePhase("ar-ag-2", "5. all-gather: second copy", "all-gather", [[1111, 2222, 3303, 4444], [1111, 2222, 3333, 4044], [111, 2222, 3333, 4444], [1111, 2220, 3333, 4444]], [
+        [0, "c0", 1, "c0", "c0", "copy", "broadcast", "bottom", "top", -16, "copy 1111"],
+        [1, "c1", 2, "c1", "c1", "copy", "broadcast", "bottom", "top", 12, "copy 2222"],
+        [2, "c2", 3, "c2", "c2", "copy", "broadcast", "bottom", "top", -20, "copy 3333"],
+        [3, "c3", 0, "c3", "c3", "copy", "broadcast", "right", "right", 176, "copy 4444"]
+      ], "partial", [cellKey(0, "c0"), cellKey(0, "c1"), cellKey(0, "c3"), cellKey(1, "c0"), cellKey(1, "c1"), cellKey(1, "c2"), cellKey(2, "c1"), cellKey(2, "c2"), cellKey(2, "c3"), cellKey(3, "c0"), cellKey(3, "c2"), cellKey(3, "c3")], "每个 rank 已取得 3/4 个最终分片", "每个绿色值都来自 reduce-scatter 的最终和，复制不会改变它。"),
+      ringAllReducePhase("ar-ag-3", "6. all-gather: every rank complete", "all-gather", [ALLREDUCE_SUM, ALLREDUCE_SUM, ALLREDUCE_SUM, ALLREDUCE_SUM], [
+        [0, "c3", 1, "c3", "c3", "copy", "broadcast", "bottom", "top", -16, "copy 4444"],
+        [1, "c0", 2, "c0", "c0", "copy", "broadcast", "bottom", "top", 12, "copy 1111"],
+        [2, "c1", 3, "c1", "c1", "copy", "broadcast", "bottom", "top", -20, "copy 2222"],
+        [3, "c2", 0, "c2", "c2", "copy", "broadcast", "right", "right", 176, "copy 3333"]
+      ], "result", RANKS.flatMap(rank => CHUNKS.map(chunk => cellKey(rank, chunk))), "完成：4 个 rank 都得到 [1111, 2222, 3333, 4444]", "结果向量等于四个输入向量逐位置求和，所有 rank 的 recv buffer 相同。")
+    ];
+
+    const allReduceTreePhases = [
+      {
+        name: "0. initial buffers",
+        direction: "initial",
+        initial: true,
+        cellStates: vectorStates(ALLREDUCE_INPUT, "source"),
+        transfers: [],
+        metric: "初始 send buffer：每个 tree 节点保留自己的未归约向量",
+        explanation: "树从叶节点向根节点汇聚；下一步由 rank 3 向父节点 rank 1 发送原始向量。"
+      },
+      allReducePhase("ar-tree-leaf", "1. tree-up: leaf partial", "tree-up", [[1, 2, 3, 4], [1010, 2020, 3030, 4040], [100, 200, 300, 400], [1000, 2000, 3000, 4000]], [
+        [3, "c0", 1, "c0", "c0", "sum + forward", "reduce", "top", "bottom", -16, "r3 + r1 = partial", -30, 30]
+      ], rank => rank === 1 ? "partial" : "source", [], "rank 1 收到 rank 3 的向量，得到局部和 [1010,2020,3030,4040]", "传输边代表整条向量载荷；卡片中的四个格子展示逐位置的真实部分和。", CHUNKS.map(chunk => cellKey(1, chunk))),
+      allReducePhase("ar-tree-root", "2. tree-up: root merge", "tree-up", [ALLREDUCE_SUM, [1010, 2020, 3030, 4040], [100, 200, 300, 400], [1000, 2000, 3000, 4000]], [
+        [1, "c0", 0, "c0", "c0", "sum + forward", "reduce", "top", "bottom", -20, "partial 1010 -> root", 38, -52],
+        [2, "c0", 0, "c0", "c0", "sum + forward", "reduce", "top", "bottom", 20, "source 100 -> root", -38, 52]
+      ], rank => rank === 1 ? "partial" : "source", CHUNKS.map(chunk => cellKey(0, chunk)), "根节点得到完整和 [1111,2222,3333,4444]", "rank 1 的局部和与 rank 2 的原始向量在根节点合并；根节点现在拥有最终向量。", CHUNKS.map(chunk => cellKey(0, chunk))),
+      allReducePhase("ar-tree-down-branches", "3. tree-down: branch copies", "tree-down", [ALLREDUCE_SUM, ALLREDUCE_SUM, ALLREDUCE_SUM, [1000, 2000, 3000, 4000]], [
+        [0, "c0", 1, "c0", "c0", "copy", "broadcast", "bottom", "top", -20, "copy final vector", -52, 38],
+        [0, "c0", 2, "c0", "c0", "copy", "broadcast", "bottom", "top", 20, "copy final vector", 52, -38]
+      ], "source", RANKS.filter(rank => rank !== 3).flatMap(rank => CHUNKS.map(chunk => cellKey(rank, chunk))), "rank 1 与 rank 2 已收到完整结果向量", "树向下分发已完成的结果；复制不会再改变向量中的数值。", [1, 2].flatMap(rank => CHUNKS.map(chunk => cellKey(rank, chunk)))),
+      allReducePhase("ar-tree-down-leaf", "4. tree-down: final leaf copy", "tree-down", [ALLREDUCE_SUM, ALLREDUCE_SUM, ALLREDUCE_SUM, ALLREDUCE_SUM], [
+        [1, "c0", 3, "c0", "c0", "copy", "broadcast", "bottom", "top", -16, "copy final vector", 30, -30]
+      ], "result", RANKS.flatMap(rank => CHUNKS.map(chunk => cellKey(rank, chunk))), "完成：4 个 tree 节点都得到 [1111,2222,3333,4444]", "最后一条树边把根节点的完整结果经 rank 1 复制给 rank 3。", CHUNKS.map(chunk => cellKey(3, chunk)))
+    ];
+
+    const common = (key, api, availability, sourceOfTruth, family, formula, input, result, note, topologyVariants) => ({
+      key, api, availability, sourceOfTruth, family, formula, input, result, note, topologyVariants
+    });
+
+    const operators = [
+      common("allreduce", "ncclAllReduce", "public", "src/collectives.cc:ncclAllReduce", "collective / reduce + distribute", "out[r] = Reduce_{i=0..R-1}(in[i]) for every r", "r0 [1,2,3,4]; r1 [10,20,30,40]; r2 [100,200,300,400]; r3 [1000,2000,3000,4000]", "每 rank: [1111,2222,3333,4444]", "Ring 先让部分和绕环累加，再把四个完整分片复制回所有 rank。", [
+        { name: "ring", ranks: RANKS, chunks: CHUNKS, representative: true, phases: allReduceRingPhases },
+        { name: "tree", layout: "tree", ranks: RANKS, chunks: CHUNKS, representative: true, parents: { 1: 0, 2: 0, 3: 1 }, resultScope: "all-ranks", phases: allReduceTreePhases }
+      ]),
+      common("reducescatter", "ncclReduceScatter", "public", "src/collectives.cc:ncclReduceScatter", "collective / reduce + partition", "out[r] = Reduce_i(in[i][r])", "每 rank: send[R * recvcount]", "每 rank: recv[recvcount]", "每个 rank 仅保留自己负责的归约切片。", [
+        { name: "ring", ranks: RANKS, chunks: CHUNKS, representative: true, phases: reduceScatterRingPhases("rs") }
+      ]),
+      common("allgather", "ncclAllGather", "public", "src/collectives.cc:ncclAllGather", "collective / gather", "out[r] = concat(in[0], ..., in[R-1])", "每 rank: send[sendcount]", "每 rank: recv[R * sendcount]", "无归约；每个 rank 收集所有 rank 的 source slice。", [
+        { name: "ring", ranks: RANKS, chunks: CHUNKS, representative: true, phases: allGatherRingPhases("allgather") }
+      ]),
+      common("broadcast", "ncclBroadcast", "public", "src/collectives.cc:ncclBroadcast", "collective / root fan-out", "out[r] = in[root]", "root: send[count]; peers: recv[count]", "每 rank: root payload", "由调用方指定的 root 将 payload 复制至所有 peer；图中 root = rank 0。", [
+        { name: "fan-out", ranks: RANKS, chunks: CHUNKS, representative: true, root: 0, phases: broadcastPhases() }
+      ]),
+      common("reduce", "ncclReduce", "public", "src/collectives.cc:ncclReduce", "collective / root fan-in", "out[root] = Reduce_{i=0..R-1}(in[i])", "每 rank: send[count]", "root: recv[count]", "最终结果仅写入调用方指定的 root；图中 root = rank 0。", [
+        { name: "fan-in", ranks: RANKS, chunks: CHUNKS, representative: true, root: 0, phases: reducePhases() }
+      ]),
+      common("gather", "ncclGather", "public", "src/collectives.cc:ncclGather", "collective / root gather", "out[root] = concat(in[0], ..., in[R-1])", "每 rank: send[count]", "root: recv[R * count]", "调用方指定的 root 拼接所有 source slice；图中 root = rank 0。", [
+        { name: "fan-in", ranks: RANKS, chunks: CHUNKS, representative: true, root: 0, phases: gatherPhases() }
+      ]),
+      common("scatter", "ncclScatter", "public", "src/collectives.cc:ncclScatter", "collective / root scatter", "out[r] = in[root][r]", "root: send[R * count]", "每 rank: recv[count]", "调用方指定的 root 将不同切片发送给各 peer；图中 root = rank 0。", [
+        { name: "fan-out", ranks: RANKS, chunks: CHUNKS, representative: true, root: 0, phases: scatterPhases() }
+      ]),
+      common("send", "ncclSend", "public", "src/collectives.cc:ncclSend", "point-to-point / send", "peer.recv = local.send", "sender: send[count]", "peer recv[count]", "发送方由 peer 参数指定接收方；图中示例为 rank 0 发送至 rank 1。", [
+        { name: "direct", ranks: RANKS, chunks: CHUNKS, representative: true, phases: pointToPointPhases("send", "1. send payload") }
+      ]),
+      common("recv", "ncclRecv", "public", "src/collectives.cc:ncclRecv", "point-to-point / receive", "local.recv = peer.send", "peer send[count]", "receiver: recv[count]", "接收方由 peer 参数指定发送方；图中示例为 rank 1 接收 rank 0 的数据。", [
+        { name: "direct", ranks: RANKS, chunks: CHUNKS, representative: true, phases: pointToPointPhases("recv", "1. receive payload") }
+      ])
+    ];
+
+    const operatorSelect = document.querySelector("#operator-select");
+    const topologySelect = document.querySelector("#topology-select");
+    const phaseSelect = document.querySelector("#phase-select");
+    const phaseStep = document.querySelector("#phase-step");
+    const phaseReset = document.querySelector("#phase-reset");
+    const summaryRegistry = document.querySelector(".flow-summary-registry");
+    const summary = document.querySelector("#operator-summary");
+    const note = document.querySelector("#operator-note");
+    const transferHeading = document.querySelector(".flow-transfer-heading");
+    const transferHeadingCopy = transferHeading.firstElementChild;
+    const caption = document.querySelector("#transfer-caption");
+    const lanes = document.querySelector("#transfer-lanes");
+    const transferMap = document.querySelector("#transfer-map");
+    const transferSvg = document.querySelector("#transfer-edges");
+    const catalog = document.querySelector("#operator-catalog");
+    const status = document.querySelector("#validation-status");
+    const transferHit = FlowDiagramInteractions.createHitLayer({ root: transferSvg, host: transferMap });
+    const transferFocus = FlowDiagramInteractions.createFocusLayer({ root: transferSvg, host: transferMap });
+    const transferFocusController = FlowDiagramInteractions.bindFocus({ root: transferSvg, selector: ".flow-edge-wrap", itemFor: element => ({ key: element.dataset.key }), focusLayer: transferFocus });
+    FlowDiagramInteractions.bindPathFocus({
+      root: transferMap,
+      svg: transferSvg,
+      selector: ".flow-edge-wrap",
+      itemFor: element => ({ key: element.dataset.key }),
+      controller: transferFocusController,
+      blockedSelector: ".flow-transfer-cell, .flow-topology-hitbox"
+    });
+    const summaryRail = FlowDiagramInteractions.createHorizontalScrollRail({ viewport: summaryRegistry, thumbLabel: "Operator formula horizontal position" });
+    let activeOperator = "allreduce";
+    let stableStateLayouts = [];
+    let staticValidationErrors = [];
+    const roundedSelects = new Map();
+
+    [operatorSelect, topologySelect, phaseSelect].forEach(select => roundedSelects.set(select, FlowDiagramInteractions.createRoundedSelect(select)));
+    function refreshRoundedSelect(select) { roundedSelects.get(select)?.refresh(); }
+
+    function option(select, value, label) {
+      const item = document.createElement("option");
+      item.value = value;
+      item.textContent = label;
+      select.append(item);
+      refreshRoundedSelect(select);
+    }
+
+    function currentOperator() { return operators.find(operator => operator.key === operatorSelect.value) || operators[0]; }
+    function currentTopology() { return currentOperator().topologyVariants.find(variant => variant.name === topologySelect.value) || currentOperator().topologyVariants[0]; }
+    function currentPhase() { return currentTopology().phases.find(phase => phase.name === phaseSelect.value) || currentTopology().phases[0]; }
+
+    function renderSummary(operator, variant, phase, targets = {}) {
+      const summaryTarget = targets.summary || summary;
+      const noteTarget = targets.note || note;
+      const rows = [
+        ["操作", operator.api],
+        ["谁可以使用", operator.availability === "public" ? "应用可直接调用" : "运行时内部步骤"],
+        ["计算规则", operator.formula],
+        ["这一步的可观察变化", phase.metric || (operator.input + " -> " + operator.result)],
+        ["当前阶段", phase.name]
+      ];
+      summaryTarget.replaceChildren();
+      rows.forEach(([label, value]) => {
+        const row = document.createElement("tr");
+        const head = document.createElement("th");
+        head.textContent = label;
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        if (label === "计算规则") cell.className = "flow-summary-formula";
+        row.append(head, cell);
+        summaryTarget.append(row);
+      });
+      noteTarget.replaceChildren();
+      const strong = document.createElement("strong");
+      strong.textContent = "如何阅读当前轨迹";
+      const detail = document.createElement("p");
+      detail.textContent = phase.explanation || operator.note;
+      noteTarget.append(strong, detail);
+    }
+
+    function transferCaptionText(operator, variant, phase, phaseIndex) {
+      const isInitial = Boolean(phase.initial);
+      const transitionCount = variant.phases.length - (variant.phases[0]?.initial ? 1 : 0);
+      const transitionIndex = phaseIndex - (variant.phases[0]?.initial ? 1 : 0) + 1;
+      return operator.key === "allreduce" && variant.name === "ring"
+        ? (isInitial
+          ? "真实 Sum 向量示例，初始状态：每个格子是所属 rank 的原始输入值；点击下一步才开始第 1/" + transitionCount + " 次归约传输。"
+          : "真实 Sum 向量示例，第 " + transitionIndex + "/" + transitionCount + " 步：每个格子是一个位置的当前数值；逐步推进可看到部分和如何变为所有 rank 相同的结果向量。")
+        : operator.api + "：" + phase.name + "，展示 4 个 rank 的代表性传输。";
+    }
+
+    function transferStatusText(phase, rejected = []) {
+      if (staticValidationErrors.length) return "静态校验失败: " + staticValidationErrors.join("; ");
+      if (rejected.length) return "路线检查失败: " + rejected.join(", ");
+      const progress = phase.initial
+        ? "初始状态：尚未发生传输。"
+        : "当前阶段已绘制 " + phase.transfers.length + " 条传输。";
+      return progress + (phase.metric || "每条边都对应一个可观察的缓冲区更新。");
+    }
+
+    function renderTransfer() {
+      const operator = currentOperator();
+      const variant = currentTopology();
+      const phase = currentPhase();
+      stableStateLayouts.forEach(controller => controller.setActive(phaseSelect.selectedIndex));
+      transferMap.dataset.flowLayout = variant.layout || "grid";
+      FlowDiagramInteractions.renderTransferLanes({
+        root: lanes,
+        ranks: variant.ranks,
+        chunks: variant.chunks,
+        layout: variant.layout,
+        parents: variant.parents,
+        detail: "hover",
+        stateFor: (rank, chunk) => phase.cellStates[cellKey(rank, chunk)],
+        contentFor: (rank, chunk, state) => {
+          const value = typeof state === "string" ? state : state.value;
+          const vector = CHUNKS.map(part => phase.cellStates[cellKey(rank, part)]?.value).join(", ");
+          const stateName = typeof state === "string" ? state : state.state;
+          return { key: chunk, value, detail: `完整向量\n[${vector}]\n当前分量: ${chunk} = ${value}\n状态: ${stateName}` };
+        },
+        aggregateDetailFor: (rank, vector) => ({ title: `rank ${rank}`, detail: `完整向量\n[${vector.join(", ")}]` }),
+        // Grid and tree share one receiving-cell update frame. Whole-vector
+        // snapshots may override it; otherwise infer the transfer destinations.
+        updatedKeys: Array.isArray(phase.updatedKeys)
+          ? phase.updatedKeys
+          : phase.transfers.map(item => cellKey(item.toRank, item.toBuffer))
+      });
+      caption.textContent = transferCaptionText(operator, variant, phase, phaseSelect.selectedIndex);
+      renderSummary(operator, variant, phase);
+      summaryRail.update();
+      updatePhaseControls();
+      requestAnimationFrame(renderTransferRoutes);
+      catalog.querySelectorAll(".flow-catalog-card").forEach(card => card.setAttribute("aria-current", String(card.dataset.key === operator.key)));
+    }
+
+    function renderTransferRoutes() {
+      const variant = currentTopology();
+      const phase = currentPhase();
+      transferSvg.setAttribute("viewBox", "0 0 " + transferMap.clientWidth + " " + transferMap.clientHeight);
+      const treeLayout = variant.layout === "tree";
+      const rendered = FlowDiagramInteractions.renderTransferEdges({
+        root: transferMap,
+        svg: transferSvg,
+        transfers: phase.transfers,
+        nodeSelector: treeLayout ? ".flow-topology-rank" : ".flow-transfer-cell",
+        endpointKeyFor: treeLayout ? (transfer, endpoint) => `rank-${endpoint === "from" ? transfer.fromRank : transfer.toRank}` : undefined
+      });
+      FlowDiagramInteractions.syncHitLayer({ root: transferSvg, layer: transferHit });
+      status.textContent = transferStatusText(phase, rendered.rejected || []);
+    }
+
+    function refillTopology() {
+      const operator = currentOperator();
+      topologySelect.replaceChildren();
+      operator.topologyVariants.forEach(variant => option(topologySelect, variant.name, variant.name));
+      refillPhase();
+    }
+
+    function refillPhase() {
+      const variant = currentTopology();
+      phaseSelect.replaceChildren();
+      variant.phases.forEach(phase => option(phaseSelect, phase.name, phase.name));
+      renderTransfer();
+      syncStableStateLayouts();
+    }
+
+    function currentStateSamples() {
+      const operator = currentOperator();
+      const variant = currentTopology();
+      return variant.phases.map((phase, index) => ({ operator, variant, phase, index }));
+    }
+
+    function syncStableStateLayouts() {
+      if (!stableStateLayouts.length) return;
+      const samples = currentStateSamples();
+      stableStateLayouts.forEach(controller => controller.setStates(samples, phaseSelect.selectedIndex));
+    }
+
+    FlowDiagramInteractions.bindLayoutRefresh({ root: transferMap, observe: [lanes], refresh: renderTransferRoutes });
+
+    function updatePhaseControls() {
+      const count = phaseSelect.options.length;
+      const iterable = count > 1;
+      const stepHadFocus = document.activeElement === phaseStep;
+      const resetHadFocus = document.activeElement === phaseReset;
+      phaseStep.disabled = !iterable || phaseSelect.selectedIndex >= count - 1;
+      phaseReset.disabled = !iterable || phaseSelect.selectedIndex === 0;
+      if (stepHadFocus && phaseStep.disabled && !phaseReset.disabled) phaseReset.focus({ preventScroll: true });
+      if (resetHadFocus && phaseReset.disabled && !phaseStep.disabled) phaseStep.focus({ preventScroll: true });
+    }
+
+    function setPhase(index) {
+      phaseSelect.selectedIndex = Math.max(0, Math.min(index, phaseSelect.options.length - 1));
+      refreshRoundedSelect(phaseSelect);
+      renderTransfer();
+    }
+
+    operators.forEach(operator => option(operatorSelect, operator.key, operator.api + (operator.availability === "internal" ? " [internal]" : "")));
+    operatorSelect.value = activeOperator;
+    refreshRoundedSelect(operatorSelect);
+    operatorSelect.addEventListener("change", () => refillTopology());
+    topologySelect.addEventListener("change", () => refillPhase());
+    phaseSelect.addEventListener("change", () => renderTransfer());
+    phaseStep.addEventListener("click", () => setPhase(phaseSelect.selectedIndex + 1));
+    phaseReset.addEventListener("click", () => setPhase(0));
+
+    operators.forEach(operator => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "flow-catalog-card";
+      card.dataset.key = operator.key;
+      card.setAttribute("aria-label", "选择 " + operator.api);
+      const title = document.createElement("h3");
+      title.textContent = operator.api;
+      const availability = document.createElement("p");
+      availability.textContent = operator.availability === "public" ? "应用可直接调用" : "运行时内部步骤";
+      const formula = document.createElement("p");
+      formula.textContent = operator.formula;
+      const description = document.createElement("p");
+      description.className = "small";
+      description.textContent = operator.note;
+      card.append(title, availability, formula, description);
+      card.addEventListener("click", () => {
+        operatorSelect.value = operator.key;
+        refreshRoundedSelect(operatorSelect);
+        refillTopology();
+      });
+      catalog.append(card);
+    });
+    const topologyErrors = FlowDiagramInteractions.validateTransferTopologies(operators);
+    staticValidationErrors = topologyErrors;
+    refillTopology();
+    stableStateLayouts = [
+      FlowDiagramInteractions.createStableStateLayout({
+        target: summaryRegistry,
+        render: (probe, state) => renderSummary(state.operator, state.variant, state.phase, {
+          summary: probe.querySelector("tbody"),
+          note: document.createElement("aside")
+        })
+      }),
+      FlowDiagramInteractions.createStableStateLayout({
+        target: note,
+        render: (probe, state) => renderSummary(state.operator, state.variant, state.phase, {
+          summary: document.createElement("tbody"),
+          note: probe
+        })
+      }),
+      FlowDiagramInteractions.createStableStateLayout({
+        target: transferHeadingCopy,
+        render: (probe, state) => {
+          probe.querySelector(".flow-transfer-caption").textContent = transferCaptionText(state.operator, state.variant, state.phase, state.index);
+        }
+      }),
+      FlowDiagramInteractions.createStableStateLayout({
+        target: status,
+        render: (probe, state) => {
+          probe.textContent = transferStatusText(state.phase);
+        }
+      })
+    ];
+    syncStableStateLayouts();
+  })();
+  </script>
+</body>
+</html>

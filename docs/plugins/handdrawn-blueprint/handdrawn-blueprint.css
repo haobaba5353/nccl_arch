@@ -1,0 +1,953 @@
+/*
+ * Handdrawn Blueprint Plugin
+ * Reusable visual system for execution-flow diagrams.
+ * Subject-specific styling belongs in data and semantic flow-* classes, not here.
+ */
+.flow-page {
+  --flow-bg: #fffdf7;
+  --flow-ink: #24201b;
+  --flow-muted: #756f65;
+  --flow-line: #ded6c7;
+  --flow-line-strong: #2d2924;
+  --flow-panel: #ffffff;
+  --flow-paper: #fffefa;
+  --flow-paper-blue: #eef5ff;
+  --flow-paper-green: #eefaf3;
+  --flow-paper-orange: #fff3e8;
+  --flow-copy: #2563eb;
+  --flow-reduce: #c2410c;
+  --flow-result: #047857;
+  --flow-state: #7c3aed;
+  --flow-paper-shadow-color: #eadfca;
+  --flow-rail-line-color: #c9bda9;
+  --flow-focus-outline: 2px dashed var(--flow-copy);
+  --flow-focus-offset: 3px;
+  --bg: var(--flow-bg);
+  --ink: var(--flow-ink);
+  --muted: var(--flow-muted);
+  --line: var(--flow-line);
+  --line-strong: var(--flow-line-strong);
+  --panel: var(--flow-panel);
+  --paper: var(--flow-paper);
+  --paper-blue: var(--flow-paper-blue);
+  --paper-green: var(--flow-paper-green);
+  --paper-orange: var(--flow-paper-orange);
+  --copy: var(--flow-copy);
+  --reduce: var(--flow-reduce);
+  --result: var(--flow-result);
+  --state: var(--flow-state);
+  --flow-radius-panel: 16px;
+  --flow-radius-card: 10px;
+  --flow-radius-control: 8px;
+  --flow-radius-select: 10px;
+  --flow-shadow: 5px 5px 0 var(--flow-paper-shadow-color);
+  color: var(--flow-ink);
+  font-family: "Segoe Print", "Comic Sans MS", "Microsoft YaHei", "Segoe UI", sans-serif;
+  line-height: 1.55;
+}
+
+.flow-page,
+.flow-page * { box-sizing: border-box; }
+
+body.flow-page {
+  margin: 0;
+  background: radial-gradient(circle at 16px 16px, rgba(36, 32, 27, .05) 1.2px, transparent 1.4px), var(--bg);
+  background-size: 22px 22px;
+}
+
+.flow-page > main {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 30px 18px 54px;
+  background: rgba(255, 253, 247, .78);
+}
+
+.flow-page :is(h1, h2, h3) { letter-spacing: 0; }
+
+.flow-page h1 { margin: 0 0 10px; font-size: 32px; line-height: 1.2; font-weight: 760; }
+.flow-page h2 { margin: 30px 0 12px; padding-bottom: 6px; border-bottom: 2px dashed var(--line); font-size: 20px; font-weight: 720; }
+.flow-page h3 { margin: 20px 0 10px; font-size: 17px; }
+.flow-page p { margin: 8px 0; }
+
+.flow-page code {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f2f2ef;
+  color: #1f2937;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: .94em;
+}
+
+.flow-page table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.flow-page :is(th, td) { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.flow-page th { background: var(--paper-orange); white-space: nowrap; }
+.flow-page tr:last-child td { border-bottom: 0; }
+.flow-page .small { color: var(--muted); font-size: 13px; }
+
+.flow-hero {
+  position: relative;
+  margin: 16px 0 10px;
+  padding: 16px 18px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-panel);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 #efe7d7;
+  transform: rotate(-0.25deg);
+}
+
+.flow-hero::after {
+  content: "";
+  position: absolute;
+  right: 18px;
+  bottom: 12px;
+  width: 86px;
+  height: 14px;
+  border-bottom: 2px solid #f59e0b;
+  border-radius: 50%;
+  opacity: .65;
+  transform: rotate(-3deg);
+}
+
+.flow-controls {
+  position: relative;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin: 18px 0;
+  padding: 12px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-panel);
+  background: var(--panel);
+  box-shadow: 8px 8px 0 #eee5d2;
+  isolation: isolate;
+}
+
+.flow-control {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  align-content: start;
+  font-weight: 700;
+}
+
+.flow-controls select,
+.flow-btn {
+  height: 38px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-control);
+  font: inherit;
+}
+
+.flow-controls select {
+  display: block;
+  width: 100%;
+  min-width: 180px;
+  padding: 0 34px 0 10px;
+  border-radius: var(--flow-radius-select);
+  appearance: none;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--ink) 50%) right 13px center / 7px 7px no-repeat,
+    linear-gradient(135deg, var(--ink) 50%, transparent 50%) right 8px center / 7px 7px no-repeat,
+    var(--paper);
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+  box-shadow: 4px 4px 0 var(--flow-paper-shadow-color);
+}
+
+.flow-btn {
+  min-width: 132px;
+  padding: 0 15px;
+  background: var(--paper-orange);
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+  box-shadow: var(--flow-shadow);
+}
+
+.flow-btn:hover,
+.flow-btn:focus-visible { background: #fde7d4; outline: var(--flow-focus-outline); outline-offset: var(--flow-focus-offset); }
+.flow-btn:disabled { cursor: default; opacity: .52; }
+.flow-btn:disabled:hover { background: var(--paper-orange); outline: none; }
+.flow-controls select:focus-visible { outline: var(--flow-focus-outline); outline-offset: var(--flow-focus-offset); }
+
+/* Form controls: native selects retain state while the shared paper component renders interaction. */
+.flow-native-select { display: none !important; }
+.flow-rounded-select { position: relative; width: 100%; min-width: 0; }
+.flow-rounded-select:focus-within { z-index: 60; }
+.flow-rounded-select-trigger,
+.flow-rounded-select-option {
+  border: 2px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.flow-rounded-select-trigger {
+  position: relative;
+  width: 100%;
+  height: 38px;
+  padding: 0 36px 0 10px;
+  border-radius: var(--flow-radius-select);
+  box-shadow: 4px 4px 0 var(--flow-paper-shadow-color);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.flow-rounded-select-trigger::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-70%) rotate(45deg);
+}
+.flow-rounded-select-trigger[aria-expanded="true"]::after { transform: translateY(-30%) rotate(225deg); }
+.flow-rounded-select-trigger:focus-visible { outline: var(--flow-focus-outline); outline-offset: var(--flow-focus-offset); }
+.flow-rounded-select-trigger:disabled,
+.flow-rounded-select-option[aria-disabled="true"] { cursor: default; opacity: .52; }
+.flow-rounded-select-menu {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 7px);
+  left: 0;
+  right: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+  max-height: min(320px, var(--flow-rounded-select-available-height, calc(100vh - 132px)));
+  overflow: hidden;
+  overflow-x: hidden;
+  padding: 5px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background-color: var(--paper);
+  background-image: linear-gradient(rgba(36, 32, 27, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(36, 32, 27, .045) 1px, transparent 1px);
+  background-size: 16px 16px;
+  box-shadow: 5px 5px 0 var(--flow-paper-shadow-color);
+}
+.flow-rounded-select-menu.has-scroll-indicator { grid-template-columns: minmax(0, 1fr) 14px; }
+.flow-rounded-select-menu[hidden] { display: none !important; }
+.flow-rounded-select-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding-bottom: 8px;
+  min-width: 0;
+  max-height: calc(min(320px, var(--flow-rounded-select-available-height, calc(100vh - 132px))) - 10px);
+  overflow-y: auto;
+  overflow-x: visible;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.flow-rounded-select-options::-webkit-scrollbar { display: none; }
+.flow-rounded-select-option {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 100%;
+  height: auto;
+  min-height: 34px;
+  padding: 5px 9px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: var(--flow-radius-control);
+  cursor: pointer;
+  line-height: 1.35;
+  max-width: 100%;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-align: left;
+  text-overflow: clip;
+  white-space: normal;
+}
+.flow-rounded-select-option:hover,
+.flow-rounded-select-option:focus-visible,
+.flow-rounded-select-option[aria-selected="true"] {
+  border-color: var(--copy);
+  background: var(--paper-blue);
+  outline: none;
+}
+.flow-rounded-select-option[aria-disabled="true"]:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+.flow-key { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* Chips are the only pill-shaped diagram component. */
+.flow-chip {
+  padding: 3px 7px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  background: #fff;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.flow-chip.data { background: var(--paper-blue); border-color: var(--copy); }
+.flow-chip.result { background: var(--paper-green); border-color: var(--result); }
+.flow-chip.compute { background: var(--paper-orange); border-color: var(--reduce); }
+.flow-chip.state { background: #f4efff; border-color: var(--state); }
+
+.flow-edge-focus-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none !important;
+  z-index: 4 !important;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease-out, visibility 0s linear 120ms;
+}
+.flow-edge-focus-layer * { pointer-events: none !important; }
+.flow-edge-focus-layer.is-active { opacity: 1; visibility: visible; transition-delay: 0s; }
+svg.flow-edge-hit-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none !important;
+  z-index: 3 !important;
+}
+.flow-edge-hit-layer .flow-edge-wrap { pointer-events: none; }
+.flow-edge-hit-layer .flow-edge-hit { pointer-events: stroke !important; }
+.flow-edge-wrap.is-focus-source-hidden .flow-edge,
+.flow-edge-wrap.is-focus-source-hidden .flow-edge-label,
+.flow-edge-wrap.is-focus-source-hidden .flow-edge-label-bg { opacity: 0 !important; }
+.flow-edge,
+.flow-edge-label,
+.flow-edge-label-bg { transition: opacity 120ms ease-out, stroke-width 120ms ease-out; }
+.flow-transfer-detail {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background: rgba(255, 254, 250, .98);
+  box-shadow: 5px 6px 0 rgba(36, 32, 27, .16);
+  color: var(--ink);
+  font-family: Consolas, "Courier New", monospace;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+  visibility: hidden;
+}
+.flow-transfer-detail-title { font: 700 14px/1.25 "Microsoft YaHei", "Segoe UI", sans-serif; }
+.flow-transfer-detail-line { font: 12px/1.35 Consolas, "Courier New", monospace; white-space: pre-wrap; }
+
+/* Routed edge component: one group contains hit path, curve, marker, label backdrop, and label. */
+.flow-edge {
+  fill: none;
+  stroke: var(--copy);
+  stroke-width: 1.65px;
+  stroke-dasharray: 10 8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .86;
+  pointer-events: stroke;
+}
+
+@keyframes flow-edge-dash { to { stroke-dashoffset: -36px; } }
+
+.flow-edge-wrap.is-flowing .flow-edge { animation: flow-edge-dash 900ms linear infinite; }
+.flow-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18px;
+  pointer-events: stroke;
+}
+
+.flow-edge.data { stroke: var(--copy); }
+.flow-edge.reduce { stroke: var(--reduce); }
+.flow-edge.broadcast { stroke: var(--result); }
+
+.flow-edge-label {
+  fill: var(--control);
+  font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  stroke: var(--paper);
+  stroke-width: 5px;
+  stroke-linejoin: round;
+  paint-order: stroke;
+  dominant-baseline: middle;
+  alignment-baseline: middle;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.flow-edge-label-bg {
+  fill: var(--paper);
+  stroke: #d4c9b7;
+  stroke-width: 1.4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.flow-edge-wrap.data .flow-edge-label { fill: var(--copy); }
+.flow-edge-wrap.reduce .flow-edge-label { fill: var(--reduce); }
+.flow-edge-wrap.broadcast .flow-edge-label { fill: var(--result); }
+
+.flow-edge-wrap { cursor: pointer; outline: none; }
+.flow-edge-wrap:focus-visible .flow-edge,
+.flow-edge-wrap:hover .flow-edge,
+.flow-edge-wrap.is-preview .flow-edge,
+.flow-edge-wrap.is-selected .flow-edge { stroke-width: 2.25px; opacity: 1; }
+.flow-edge-focus-copy .flow-edge { stroke-width: 2.25px; }
+.flow-edge-wrap:focus-visible .flow-edge-label,
+.flow-edge-wrap:hover .flow-edge-label,
+.flow-edge-wrap.is-preview .flow-edge-label,
+.flow-edge-wrap.is-selected .flow-edge-label { opacity: 1; }
+.flow-edge-wrap:focus-visible .flow-edge-label-bg,
+.flow-edge-wrap:hover .flow-edge-label-bg,
+.flow-edge-wrap.is-preview .flow-edge-label-bg,
+.flow-edge-wrap.is-selected .flow-edge-label-bg { opacity: 1; }
+
+.flow-note,
+.flow-registry {
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background: var(--paper);
+  box-shadow: var(--flow-shadow);
+}
+
+.flow-note { padding: 12px 14px; color: var(--muted); }
+.flow-registry { padding: 10px; overflow: visible; }
+.flow-summary-registry {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: visible;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.flow-summary-registry::-webkit-scrollbar { display: none; }
+
+.flow-horizontal-scroll-host { position: relative; min-width: 0; }
+.flow-horizontal-scroll-host > :is(.flow-summary-registry, .flow-horizontal-scroll-viewport) { box-sizing: border-box; width: 100%; }
+.flow-horizontal-scroll-rail {
+  position: absolute;
+  z-index: 3;
+  right: 10px;
+  bottom: 6px;
+  left: 10px;
+  box-sizing: border-box;
+  width: auto !important;
+  height: 14px;
+  margin: 0;
+  border: 1px dashed var(--flow-rail-line-color);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+  visibility: hidden;
+}
+.flow-horizontal-scroll-rail::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  left: 8px;
+  border-top: 1px solid #d8cbb8;
+  transform: translateY(-50%);
+}
+.flow-horizontal-scroll-thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  height: 8px;
+  min-width: 30px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 999px 7px 999px 7px;
+  background: repeating-linear-gradient(135deg, #f5d1aa 0 3px, #f9e4ca 3px 6px);
+  box-shadow: 1px 2px 0 var(--flow-paper-shadow-color);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+.flow-horizontal-scroll-thumb:hover,
+.flow-horizontal-scroll-thumb:focus-visible { background: repeating-linear-gradient(135deg, #d7b38a 0 3px, #f1d5b5 3px 6px); outline: var(--flow-focus-outline); outline-offset: 2px; }
+.flow-horizontal-scroll-thumb.is-dragging,
+.flow-horizontal-scroll-thumb:active { cursor: grabbing; }
+.flow-summary-registry.has-horizontal-scroll-indicator { padding-bottom: 24px; }
+.flow-horizontal-scroll-host.has-horizontal-scroll-indicator .flow-horizontal-scroll-rail {
+  opacity: 1;
+  visibility: visible;
+}
+.flow-registry > table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--flow-radius-card);
+  overflow: hidden;
+}
+.flow-summary-registry > table { table-layout: auto; }
+.flow-summary-registry > table > :is(thead, tbody) > tr > :first-child {
+  width: var(--flow-summary-key-width, 8.5rem);
+  min-width: var(--flow-summary-key-width, 8.5rem);
+}
+.flow-registry > table thead th:first-child,
+.flow-reference-table > table thead th:first-child { border-top-left-radius: var(--flow-radius-card); }
+.flow-registry > table thead th:last-child,
+.flow-reference-table > table thead th:last-child { border-top-right-radius: var(--flow-radius-card); }
+.flow-registry > table tbody tr:last-child > :first-child,
+.flow-reference-table > table tbody tr:last-child > :first-child { border-bottom-left-radius: var(--flow-radius-card); }
+.flow-registry > table tbody tr:last-child > :last-child,
+.flow-reference-table > table tbody tr:last-child > :last-child { border-bottom-right-radius: var(--flow-radius-card); }
+.flow-registry th,
+.flow-registry td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.flow-registry code { white-space: normal; overflow-wrap: anywhere; }
+.flow-summary-formula { overflow-wrap: normal !important; white-space: nowrap !important; }
+
+.flow-reference-table { overflow: visible; }
+.flow-reference-table table {
+  width: 100%;
+  table-layout: fixed;
+  background: transparent;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--flow-radius-card);
+  overflow: hidden;
+}
+.flow-reference-table th,
+.flow-reference-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.flow-reference-table th { background: var(--paper-orange); white-space: normal; }
+.flow-reference-table tr:last-child td { border-bottom: 0; }
+.flow-reference-table code { white-space: normal; overflow-wrap: anywhere; }
+.flow-catalog { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.flow-catalog-card {
+  padding: 10px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-shadow: 3px 3px 0 var(--flow-paper-shadow-color);
+}
+.flow-catalog-card:hover,
+.flow-catalog-card:focus-visible { border-color: var(--copy); background: var(--paper-blue); }
+.flow-catalog-card:focus-visible { outline: var(--flow-focus-outline); outline-offset: var(--flow-focus-offset); }
+.flow-catalog-card h3 { margin: 0 0 5px; font: 700 14px Consolas, "Courier New", monospace; }
+.flow-catalog-card p { margin: 4px 0; font-size: 13px; }
+
+/* Stepped state trace: stable HTML cells show snapshots while shared SVG edges show each transfer. */
+.flow-transfer {
+  position: relative;
+  z-index: 2;
+  overflow: visible;
+  padding: 14px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background: var(--paper);
+  box-shadow: var(--flow-shadow);
+}
+
+.flow-transfer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.flow-transfer-heading h3 { margin: 0 0 4px; }
+.flow-transfer-heading .flow-transfer-caption { margin: 0; }
+.flow-transfer-heading > :first-child { flex: 1 1 0; min-width: 0; }
+
+.flow-transfer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.flow-transfer-actions .flow-btn {
+  width: 104px;
+  min-width: 104px;
+}
+
+.flow-transfer-key { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.flow-transfer-map {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow-anchor: none;
+  --flow-transfer-side-gutter: 160px;
+  padding-right: var(--flow-transfer-side-gutter, 280px);
+  isolation: isolate;
+}
+.flow-transfer-map[data-flow-layout="tree"] {
+  min-height: 474px;
+  padding-right: 0;
+}
+.flow-transfer-map > .flow-transfer-lanes { position: relative; z-index: 2; }
+.flow-transfer-map[data-flow-layout="tree"] > .flow-transfer-lanes { z-index: 4; }
+.flow-transfer-map > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: auto;
+  z-index: 1;
+}
+.flow-transfer-lanes { display: grid; min-width: 0; gap: 64px; }
+.flow-transfer-lanes,
+.flow-transfer-lane,
+.flow-transfer-lane-label { pointer-events: none; }
+.flow-transfer-lane {
+  display: grid;
+  grid-template-columns: 68px repeat(var(--flow-transfer-cells, 4), minmax(82px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+.flow-transfer-lane-label { color: var(--ink); font: 700 12px/1.2 Consolas, "Courier New", monospace; text-align: right; }
+.flow-transfer-lanes[data-flow-layout="tree"] {
+  position: relative;
+  display: block;
+  min-height: 452px;
+}
+.flow-topology-rank {
+  position: absolute;
+  top: var(--flow-topology-y);
+  left: var(--flow-topology-x);
+  box-sizing: border-box;
+  width: min(260px, 28%);
+  display: grid;
+  gap: 6px;
+  z-index: 3;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+.flow-topology-rank::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: -12px;
+  pointer-events: none;
+}
+.flow-topology-rank > .flow-transfer-lane-label,
+.flow-topology-rank > .flow-topology-buffer { position: relative; z-index: 1; pointer-events: auto; }
+.flow-topology-rank > .flow-transfer-lane-label { text-align: center; }
+.flow-topology-buffer {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(var(--flow-transfer-cells, 4), minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border: 2px dashed var(--flow-rail-line-color);
+  border-radius: var(--flow-radius-card);
+  background: rgba(255, 255, 255, .72);
+  box-shadow: 3px 3px 0 var(--flow-paper-shadow-color);
+  pointer-events: auto;
+  transition: border-color 120ms ease-out;
+}
+.flow-topology-hitbox {
+  position: absolute;
+  z-index: 9;
+  inset: 0;
+  border-radius: inherit;
+  cursor: default;
+  pointer-events: auto;
+}
+.flow-topology-buffer:hover,
+.flow-topology-buffer:focus-within { border-color: var(--line-strong); }
+.flow-topology-hitbox > .flow-topology-detail {
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 50%;
+}
+.flow-topology-rank:not([data-flow-root]) .flow-topology-hitbox > .flow-topology-detail {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.flow-topology-hitbox:hover > .flow-topology-detail,
+.flow-topology-hitbox:focus-visible > .flow-topology-detail {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+.flow-topology-rank[data-flow-detail-align="start"] .flow-topology-detail {
+  right: auto;
+  left: 0;
+  transform: translate(0, 4px);
+}
+.flow-topology-rank[data-flow-detail-align="end"] .flow-topology-detail {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+.flow-topology-rank[data-flow-detail-align] .flow-topology-hitbox:hover > .flow-topology-detail,
+.flow-topology-rank[data-flow-detail-align] .flow-topology-hitbox:focus-visible > .flow-topology-detail {
+  transform: translate(0, 0);
+}
+.flow-topology-buffer .flow-transfer-cell {
+  min-height: 40px;
+  padding: 6px 7px;
+  gap: 4px;
+  pointer-events: auto;
+}
+.flow-topology-buffer .flow-transfer-cell-key { font-size: 9px; }
+.flow-topology-buffer .flow-transfer-cell-value { font-size: 12px; }
+.flow-transfer-cell {
+  --flow-transfer-fill: #fff;
+  --flow-transfer-border: var(--line-strong);
+  --flow-transfer-update-shadow: #bfdbfe;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  min-height: 46px;
+  padding: 7px 9px;
+  border: 2px solid var(--flow-transfer-border);
+  border-radius: var(--flow-radius-control);
+  background: var(--flow-transfer-fill);
+  box-shadow: 2px 2px 0 var(--flow-paper-shadow-color);
+  color: var(--ink);
+  text-align: left;
+}
+.flow-transfer-cell { position: relative; isolation: isolate; pointer-events: auto; }
+.flow-transfer-detail {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 50%;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 24px));
+  transform: translate(-50%, 4px);
+}
+.flow-transfer-cell:hover,
+.flow-transfer-cell:focus-visible { z-index: 8; }
+.flow-transfer-cell:hover .flow-transfer-detail,
+.flow-transfer-cell:focus-visible .flow-transfer-detail { opacity: 1; transform: translate(-50%, 0); visibility: visible; }
+.flow-transfer-lane > .flow-transfer-cell:nth-child(2) .flow-transfer-detail {
+  right: auto;
+  left: 0;
+  transform: translate(0, 4px);
+}
+.flow-transfer-lane > .flow-transfer-cell:last-child .flow-transfer-detail {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+.flow-transfer-lane > .flow-transfer-cell:nth-child(2):is(:hover, :focus-visible) .flow-transfer-detail,
+.flow-transfer-lane > .flow-transfer-cell:last-child:is(:hover, :focus-visible) .flow-transfer-detail {
+  transform: translate(0, 0);
+}
+.flow-transfer-cell-key { color: var(--muted); font: 700 10px/1.2 Consolas, "Courier New", monospace; text-transform: uppercase; }
+.flow-transfer-cell-value { overflow: hidden; color: var(--ink); font: 700 15px/1.15 Consolas, "Courier New", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.flow-transfer-cell[data-flow-state="source"] { --flow-transfer-fill: var(--paper-blue); --flow-transfer-border: var(--copy); --flow-transfer-update-shadow: #bfdbfe; }
+.flow-transfer-cell[data-flow-state="partial"] { --flow-transfer-fill: var(--paper-orange); --flow-transfer-border: var(--reduce); --flow-transfer-update-shadow: #f3c6a0; }
+.flow-transfer-cell[data-flow-state="result"] { --flow-transfer-fill: var(--paper-green); --flow-transfer-border: var(--result); --flow-transfer-update-shadow: #b9dfcf; }
+.flow-transfer-cell[data-flow-updated] { outline: 2px dashed var(--flow-transfer-border); outline-offset: 3px; box-shadow: 4px 4px 0 var(--flow-transfer-update-shadow); }
+.flow-transfer-cell[data-flow-changing] { animation: flow-transfer-update 260ms ease-out; }
+@keyframes flow-transfer-update {
+  from { transform: translateY(7px); opacity: .3; }
+  60% { transform: translateY(-2px); }
+  to { transform: translateY(0); opacity: 1; }
+}
+.flow-vertical-scroll-rail {
+  position: relative;
+  align-self: stretch;
+  min-height: 42px;
+  margin: 2px 0;
+  border: 1px dashed var(--flow-rail-line-color);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  pointer-events: none;
+}
+.flow-vertical-scroll-rail::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  right: 50%;
+  bottom: 8px;
+  border-left: 1px solid #d8cbb8;
+  transform: translateX(50%);
+}
+.flow-vertical-scroll-thumb {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 8px;
+  min-height: 24px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 999px 7px 999px 7px;
+  background: repeating-linear-gradient(135deg, #f5d1aa 0 3px, #f9e4ca 3px 6px);
+  box-shadow: 1px 2px 0 var(--flow-paper-shadow-color);
+  cursor: grab;
+  pointer-events: auto;
+  user-select: none;
+  touch-action: none;
+  transition: transform 120ms ease-out, height 120ms ease-out, background 120ms ease-out;
+}
+.flow-vertical-scroll-thumb:hover,
+.flow-vertical-scroll-thumb:focus-visible {
+  background: repeating-linear-gradient(135deg, #d7b38a 0 3px, #f1d5b5 3px 6px);
+  outline: var(--flow-focus-outline);
+  outline-offset: 2px;
+}
+.flow-vertical-scroll-thumb.is-dragging,
+.flow-vertical-scroll-thumb:active {
+  cursor: grabbing;
+  transition: none;
+}
+
+/* State groups reserve their largest measured natural size without clipping growth. */
+[data-flow-stable-layout] {
+  min-block-size: var(--flow-stable-block-size, auto);
+  overflow-anchor: none;
+}
+
+.flow-detail[data-flow-stable-layout] { align-content: start; }
+
+.flow-layout-spring-host { position: relative; }
+
+.flow-layout-spring {
+  position: absolute;
+  z-index: 0;
+  inset-block-start: calc(var(--flow-stable-content-end, 0px) + .2em);
+  inset-inline-end: .65em;
+  inline-size: .875em;
+  block-size: min(72px, max(0px, calc(var(--flow-stable-slack, 0px) - .4em)));
+  overflow: hidden;
+  color: #9f927f;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  transform: rotate(-1deg);
+  transition: opacity 120ms ease-out;
+}
+
+.flow-layout-spring path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+[data-flow-stable-spring-active] > .flow-layout-spring { opacity: .38; }
+
+.flow-layout-probe {
+  position: fixed !important;
+  top: 0 !important;
+  left: -100000px !important;
+  inline-size: var(--flow-layout-probe-inline-size) !important;
+  max-inline-size: none !important;
+  block-size: auto !important;
+  min-block-size: 0 !important;
+  max-block-size: none !important;
+  contain: layout paint;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.flow-layout-probe,
+.flow-layout-probe * {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Compact supporting components for the transfer board. */
+.flow-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, .85fr);
+  gap: 12px;
+  align-items: start;
+  margin: 12px 0;
+}
+
+.flow-detail > * { min-width: 0; }
+
+.flow-status {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--flow-radius-card);
+  background: var(--paper-green);
+  box-shadow: 3px 3px 0 var(--flow-paper-shadow-color);
+  color: #155e43;
+  font: 700 12px/1.45 Consolas, "Courier New", monospace;
+}
+
+.flow-transfer-caption {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.flow-catalog-card[aria-current="true"] {
+  border-color: var(--copy);
+  background: var(--paper-blue);
+}
+
+@media (max-width: 720px) {
+  .flow-controls { grid-template-columns: 1fr; }
+  .flow-transfer-heading { flex-direction: column; }
+  .flow-transfer-heading > :first-child { flex: 0 0 auto; width: 100%; }
+  .flow-transfer-actions { width: 100%; }
+  .flow-transfer-actions .flow-btn { flex: 1 1 0; }
+  .flow-detail { grid-template-columns: minmax(0, 1fr); }
+  .flow-rounded-select-menu { width: 100%; }
+  .flow-rounded-select-options { min-width: 0; }
+  .flow-rounded-select-option { min-width: 0; }
+  .flow-transfer-map:not([data-flow-layout="tree"]) { --flow-transfer-side-gutter: clamp(48px, 16vw, 72px); }
+  .flow-transfer-lane { grid-template-columns: 44px repeat(var(--flow-transfer-cells, 4), minmax(0, 1fr)); gap: 4px; }
+  .flow-transfer-lane-label { font-size: 10px; }
+  .flow-transfer-cell { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 5px; }
+  .flow-transfer-cell-key { font-size: 8px; }
+  .flow-transfer-cell-value { font-size: 12px; }
+  .flow-topology-detail { width: min(270px, calc(100vw - 104px)); min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-edge-wrap.is-flowing .flow-edge,
+  .flow-transfer-cell[data-flow-changing] { animation: none; }
+  .flow-layout-spring { transition: none; }
+}
+
+@media print {
+  .flow-layout-spring { display: none !important; }
+}
