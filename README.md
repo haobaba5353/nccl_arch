@@ -4,13 +4,13 @@
 
 ## 查看页面
 
-直接在浏览器中打开 `docs/nccl-architecture-operators.html`。
+直接在浏览器中打开 `docs/index.html`。
 
 ## 资源结构
 
 ```text
 docs/
-  nccl-architecture-operators.html
+  index.html
   plugins/handdrawn-blueprint/
     handdrawn-blueprint.css
     flow-diagram-interactions.js
@@ -25,4 +25,4 @@ HTML 使用相对路径加载样式和交互脚本，因此应保留上述目录
 发布后页面地址：
 
 ```text
-https://haobaba5353.github.io/nccl_arch/nccl-architecture-operators.html
+https://red.apple/
