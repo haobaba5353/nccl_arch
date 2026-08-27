@@ -22,7 +22,10 @@ HTML 使用相对路径加载样式和交互脚本，因此应保留上述目录
 
 在仓库的 `Settings` -> `Pages` 中选择从 `main` 分支的 `/docs` 目录发布。
 
-发布后页面地址：
+无需配置自定义域名。发布后页面地址：
 
 ```text
-https://red.apple/
+https://haobaba5353.github.io/nccl_arch/
+```
+
+若曾设置 Custom domain，请在 GitHub Pages 设置中清空该字段。
